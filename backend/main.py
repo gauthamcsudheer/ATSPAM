@@ -150,7 +150,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
         return email
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 def get_current_user(email: str = Depends(verify_token)):
@@ -414,6 +414,8 @@ async def create_time_slot(time_slot_data: TimeSlotCreate, current_user: dict = 
     time_slot_doc = time_slot_data.model_dump()
     result = time_slots_collection.insert_one(time_slot_doc)
     created_slot = time_slots_collection.find_one({"_id": result.inserted_id})
+    if not created_slot:
+        raise HTTPException(status_code=500, detail="Failed to create and retrieve time slot.")
     created_slot["id"] = str(created_slot.pop("_id"))
     return TimeSlotResponse(**created_slot)
 
@@ -456,6 +458,8 @@ async def book_appointment(appointment_data: AppointmentCreate, current_user: di
     
     # Prepare and return response
     created_appointment = appointments_collection.find_one({"_id": result.inserted_id})
+    if not created_appointment:
+        raise HTTPException(status_code=500, detail="Failed to create and retrieve appointment.")
     created_appointment["id"] = str(created_appointment.pop("_id"))
     
     return AppointmentResponse(**created_appointment)
@@ -541,6 +545,8 @@ async def review_appointment(appointment_id: str, review_data: AppointmentReview
         
         # Get the date of the appointment from its time slot
         time_slot = time_slots_collection.find_one({"_id": ObjectId(appointment["time_slot_id"])})
+        if not time_slot:
+            raise HTTPException(status_code=404, detail="Associated time slot not found")
         appointment_date = time_slot["start_time"].date()
         
         # Determine the next token number for that day
