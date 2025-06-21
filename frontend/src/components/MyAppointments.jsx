@@ -28,6 +28,25 @@ const MyAppointments = ({ onClose }) => {
     }
   };
 
+  const handleCancel = async (appointmentId) => {
+    if (!window.confirm('Are you sure you want to cancel this appointment?')) {
+      return;
+    }
+    
+    try {
+      await axios.put(
+        `http://localhost:8000/appointments/${appointmentId}/status?status=cancelled`,
+        {}, // Empty body for PUT request
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Refresh the list after cancellation
+      fetchAppointments();
+    } catch (err) {
+      setError('Failed to cancel appointment. Please try again.');
+      console.error(err);
+    }
+  };
+
   const formatDateTime = (dateTimeString) => {
     const date = new Date(dateTimeString);
     return date.toLocaleString('en-US', { 
@@ -66,19 +85,20 @@ const MyAppointments = ({ onClose }) => {
   };
 
   const getStatusText = (status) => {
-    switch (status) {
-      case 'booked':
-        return 'Booked';
-      case 'active':
-        return 'In Progress';
-      case 'completed':
-        return 'Completed';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return status;
-    }
+    const statusMap = {
+      pending: 'Pending Approval',
+      booked: 'Approved',
+      rejected: 'Rejected',
+      active: 'In Progress',
+      completed: 'Completed',
+      cancelled: 'Cancelled',
+    };
+    return statusMap[status] || status.charAt(0).toUpperCase() + status.slice(1);
   };
+
+  const isCancellable = (status) => {
+    return ['pending', 'booked'].includes(status);
+  }
 
   if (loading) {
     return (
@@ -113,7 +133,7 @@ const MyAppointments = ({ onClose }) => {
                 <div key={appointment.id} className="appointment-card">
                   <div className="appointment-header">
                     <span className={`status-badge status-${appointment.status.toLowerCase()}`}>
-                      {appointment.status}
+                      {getStatusText(appointment.status)}
                     </span>
                     {appointment.status === 'booked' && appointment.token_number && (
                       <span className="token-number">Token #{appointment.token_number}</span>
@@ -142,6 +162,17 @@ const MyAppointments = ({ onClose }) => {
                       <span>{formatDateTime(appointment.booked_at)}</span>
                     </div>
                   </div>
+
+                  {isCancellable(appointment.status) && (
+                    <div className="appointment-actions">
+                      <button 
+                        onClick={() => handleCancel(appointment.id)} 
+                        className="action-button cancel-small"
+                      >
+                        Cancel Appointment
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

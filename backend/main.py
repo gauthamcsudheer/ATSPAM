@@ -43,6 +43,7 @@ db = client["atspam_db"]
 users_collection = db["users"]
 appointments_collection = db["appointments"]
 time_slots_collection = db["time_slots"]
+notifications_collection = db["notifications"]
 
 # Pydantic models
 class UserCreate(BaseModel):
@@ -95,6 +96,34 @@ class AppointmentResponse(BaseModel):
     booked_at: datetime
     user_details: Optional[UserResponse] = None
     time_slot_details: Optional[TimeSlotResponse] = None
+
+class UserStatusUpdate(BaseModel):
+    is_active: bool
+
+class UserRoleUpdate(BaseModel):
+    role: str
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+
+class PasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+
+class AdminStats(BaseModel):
+    pending_appointments: int
+    users_by_role: dict
+    appointments_today: int
+    total_users: int
+
+class NotificationResponse(BaseModel):
+    id: str
+    user_id: str
+    message: str
+    is_read: bool
+    created_at: datetime
+    link: Optional[str] = None
 
 # Helper functions
 def verify_password(plain_password, hashed_password):
@@ -220,6 +249,161 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     )
 
 # =================================================================
+# User Profile Management
+# =================================================================
+
+@app.put("/me/details", response_model=UserResponse)
+async def update_current_user_info(user_update: UserUpdate, current_user: dict = Depends(get_current_active_user)):
+    update_data = {k: v for k, v in user_update.model_dump().items() if v is not None}
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update data provided")
+
+    users_collection.update_one({"_id": current_user["_id"]}, {"$set": update_data})
+
+    updated_user = users_collection.find_one({"_id": current_user["_id"]})
+    if not updated_user:
+         raise HTTPException(status_code=404, detail="User not found after update")
+
+    return UserResponse(
+        id=str(updated_user["_id"]),
+        email=updated_user["email"],
+        name=updated_user["name"],
+        role=updated_user["role"],
+        phone=updated_user.get("phone"),
+        is_active=updated_user.get("is_active", True),
+        created_at=updated_user["created_at"]
+    )
+
+@app.put("/me/password")
+async def update_current_user_password(password_update: PasswordUpdate, current_user: dict = Depends(get_current_active_user)):
+    # Verify current password
+    if not verify_password(password_update.current_password, current_user["password"]):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+
+    # Hash new password
+    hashed_password = get_password_hash(password_update.new_password)
+    
+    # Update password in the database
+    users_collection.update_one({"_id": current_user["_id"]}, {"$set": {"password": hashed_password}})
+    
+    return {"message": "Password updated successfully"}
+
+# =================================================================
+# Admin User Management
+# =================================================================
+
+@app.get("/admin/users", response_model=List[UserResponse])
+async def get_all_users(current_user: dict = Depends(get_current_active_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    all_users = []
+    for user in users_collection.find({}):
+        all_users.append(UserResponse(
+            id=str(user["_id"]),
+            email=user["email"],
+            name=user["name"],
+            role=user["role"],
+            phone=user.get("phone"),
+            is_active=user.get("is_active", True),
+            created_at=user["created_at"]
+        ))
+    return all_users
+
+@app.put("/admin/users/{user_id}/status", response_model=UserResponse)
+async def update_user_status(user_id: str, status_update: UserStatusUpdate, current_user: dict = Depends(get_current_active_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    user_oid = ObjectId(user_id)
+    target_user = users_collection.find_one({"_id": user_oid})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    users_collection.update_one({"_id": user_oid}, {"$set": {"is_active": status_update.is_active}})
+    
+    updated_user = users_collection.find_one({"_id": user_oid})
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found after update")
+
+    return UserResponse(
+        id=str(updated_user["_id"]),
+        email=updated_user["email"],
+        name=updated_user["name"],
+        role=updated_user["role"],
+        phone=updated_user.get("phone"),
+        is_active=updated_user.get("is_active", True),
+        created_at=updated_user["created_at"]
+    )
+
+@app.put("/admin/users/{user_id}/role", response_model=UserResponse)
+async def update_user_role(user_id: str, role_update: UserRoleUpdate, current_user: dict = Depends(get_current_active_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    valid_roles = ["faculty", "student", "principal", "admin"]
+    if role_update.role.lower() not in valid_roles:
+        raise HTTPException(status_code=400, detail="Invalid role specified")
+        
+    user_oid = ObjectId(user_id)
+    target_user = users_collection.find_one({"_id": user_oid})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    users_collection.update_one({"_id": user_oid}, {"$set": {"role": role_update.role.lower()}})
+
+    updated_user = users_collection.find_one({"_id": user_oid})
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found after update")
+        
+    return UserResponse(
+        id=str(updated_user["_id"]),
+        email=updated_user["email"],
+        name=updated_user["name"],
+        role=updated_user["role"],
+        phone=updated_user.get("phone"),
+        is_active=updated_user.get("is_active", True),
+        created_at=updated_user["created_at"]
+    )
+
+@app.get("/admin/overview-stats", response_model=AdminStats)
+async def get_admin_overview_stats(current_user: dict = Depends(get_current_active_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    # Pending appointments
+    pending_appointments = appointments_collection.count_documents({"status": "pending"})
+    
+    # Users by role
+    pipeline = [
+        {"$group": {"_id": "$role", "count": {"$sum": 1}}}
+    ]
+    users_by_role_cursor = users_collection.aggregate(pipeline)
+    users_by_role = {item["_id"]: item["count"] for item in users_by_role_cursor}
+    
+    # Appointments today
+    today = date.today()
+    start_of_day = datetime.combine(today, time.min)
+    end_of_day = datetime.combine(today, time.max)
+    todays_slots_cursor = time_slots_collection.find({"start_time": {"$gte": start_of_day, "$lt": end_of_day}})
+    todays_slot_ids = [str(slot["_id"]) for slot in todays_slots_cursor]
+    appointments_today = appointments_collection.count_documents({
+        "time_slot_id": {"$in": todays_slot_ids},
+        "status": {"$in": ["booked", "active"]}
+    })
+    
+    # Total users
+    total_users = users_collection.count_documents({})
+    
+    return AdminStats(
+        pending_appointments=pending_appointments,
+        users_by_role=users_by_role,
+        appointments_today=appointments_today,
+        total_users=total_users
+    )
+
+# =================================================================
 # Schedule Management Routes (For Principal/Admin)
 # =================================================================
 
@@ -251,25 +435,26 @@ async def get_time_slots(day: date = Query(..., description="Get time slots for 
 
 @app.post("/appointments/book", status_code=status.HTTP_201_CREATED, response_model=AppointmentResponse)
 async def book_appointment(appointment_data: AppointmentCreate, current_user: dict = Depends(get_current_active_user)):
-    if current_user["role"] not in ["faculty", "student"]:
-        raise HTTPException(status_code=403, detail="Only faculty and students can book appointments")
-
-    time_slot_id = ObjectId(appointment_data.time_slot_id)
-    time_slot = time_slots_collection.find_one({"_id": time_slot_id})
-
+    # Check if time slot exists
+    time_slot_id_obj = ObjectId(appointment_data.time_slot_id)
+    time_slot = time_slots_collection.find_one({"_id": time_slot_id_obj})
     if not time_slot:
         raise HTTPException(status_code=404, detail="Time slot not found")
 
+    # Create appointment document
     appointment_doc = {
         "user_id": str(current_user["_id"]),
         "time_slot_id": appointment_data.time_slot_id,
         "purpose": appointment_data.purpose,
-        "token_number": None,
-        "status": "pending",
-        "booked_at": datetime.now(timezone.utc)
+        "status": "pending",  # Appointments now start as pending
+        "token_number": None, # Token is assigned upon approval
+        "booked_at": datetime.utcnow()
     }
-
+    
+    # Insert appointment
     result = appointments_collection.insert_one(appointment_doc)
+    
+    # Prepare and return response
     created_appointment = appointments_collection.find_one({"_id": result.inserted_id})
     created_appointment["id"] = str(created_appointment.pop("_id"))
     
@@ -277,40 +462,58 @@ async def book_appointment(appointment_data: AppointmentCreate, current_user: di
 
 @app.get("/appointments/my-appointments", response_model=List[AppointmentResponse])
 async def get_my_appointments(current_user: dict = Depends(get_current_active_user)):
-    appointments_cursor = appointments_collection.find({"user_id": str(current_user["_id"])}).sort("booked_at", -1)
+    user_id = str(current_user["_id"])
+    appointments_cursor = appointments_collection.find({"user_id": user_id}).sort("booked_at", -1)
+    
     appointments = []
-    for appt in appointments_cursor:
-        appt["id"] = str(appt.pop("_id"))
-        time_slot = time_slots_collection.find_one({"_id": ObjectId(appt["time_slot_id"])})
+    for app in appointments_cursor:
+        app["id"] = str(app.pop("_id"))
+        
+        # Fetch associated time slot details
+        time_slot = time_slots_collection.find_one({"_id": ObjectId(app["time_slot_id"])})
         if time_slot:
             time_slot["id"] = str(time_slot.pop("_id"))
-            time_slot["booked_count"] = appointments_collection.count_documents({"time_slot_id": time_slot["id"], "status": "booked"})
-            appt["time_slot_details"] = TimeSlotResponse(**time_slot)
-        appointments.append(AppointmentResponse(**appt))
+            # Temp fix for booked_count, ideally we should have a proper model mapping
+            time_slot["booked_count"] = appointments_collection.count_documents({"time_slot_id": app["time_slot_id"], "status": "booked"})
+            app["time_slot_details"] = TimeSlotResponse(**time_slot)
+        
+        appointments.append(AppointmentResponse(**app))
+        
     return appointments
-
-# =================================================================
-# Appointment Approval Routes (For Principal/Admin)
-# =================================================================
 
 @app.get("/appointments/pending", response_model=List[AppointmentResponse])
 async def get_pending_appointments(current_user: dict = Depends(get_current_active_user)):
     if current_user["role"] not in ["principal", "admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
-    pending_cursor = appointments_collection.find({"status": "pending"})
+
+    pending_cursor = appointments_collection.find({"status": "pending"}).sort("booked_at", 1)
+    
     appointments = []
-    for appt in pending_cursor:
-        appt["id"] = str(appt.pop("_id"))
-        user = users_collection.find_one({"_id": ObjectId(appt["user_id"])})
+    for app in pending_cursor:
+        app["id"] = str(app.pop("_id"))
+
+        # Fetch user details
+        user = users_collection.find_one({"_id": ObjectId(app["user_id"])})
         if user:
-            user["id"] = str(user.pop("_id"))
-            appt["user_details"] = UserResponse(**user)
-        time_slot = time_slots_collection.find_one({"_id": ObjectId(appt["time_slot_id"])})
+            app["user_details"] = UserResponse(
+                id=str(user["_id"]),
+                email=user["email"],
+                name=user["name"],
+                role=user["role"],
+                phone=user.get("phone"),
+                is_active=user.get("is_active", True),
+                created_at=user["created_at"]
+            )
+        
+        # Fetch time slot details
+        time_slot = time_slots_collection.find_one({"_id": ObjectId(app["time_slot_id"])})
         if time_slot:
             time_slot["id"] = str(time_slot.pop("_id"))
-            time_slot["booked_count"] = appointments_collection.count_documents({"time_slot_id": time_slot["id"], "status": "booked"})
-            appt["time_slot_details"] = TimeSlotResponse(**time_slot)
-        appointments.append(AppointmentResponse(**appt))
+            time_slot["booked_count"] = appointments_collection.count_documents({"time_slot_id": app["time_slot_id"], "status": "booked"})
+            app["time_slot_details"] = TimeSlotResponse(**time_slot)
+
+        appointments.append(AppointmentResponse(**app))
+        
     return appointments
 
 class AppointmentReview(BaseModel):
@@ -321,30 +524,72 @@ async def review_appointment(appointment_id: str, review_data: AppointmentReview
     if current_user["role"] not in ["principal", "admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    appt_obj_id = ObjectId(appointment_id)
-    appointment = appointments_collection.find_one({"_id": appt_obj_id})
-    if not appointment or appointment["status"] != "pending":
-        raise HTTPException(status_code=404, detail="Pending appointment not found")
+    appointment_oid = ObjectId(appointment_id)
+    appointment = appointments_collection.find_one({"_id": appointment_oid})
 
-    if review_data.action == "approve":
-        # Generate token number for the day
-        today_start = datetime.combine(datetime.today().date(), time.min)
-        token_count = appointments_collection.count_documents({"booked_at": {"$gte": today_start}, "status": "booked"})
-        new_token = token_count + 1
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    if appointment["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Cannot review an appointment with status '{appointment['status']}'")
+
+    action = review_data.action.lower()
+    updated_fields = {}
+
+    if action == "approve":
+        updated_fields["status"] = "booked"
         
-        update_data = {"status": "booked", "token_number": new_token}
-    elif review_data.action == "reject":
-        update_data = {"status": "rejected"}
-    else:
-        raise HTTPException(status_code=400, detail="Invalid action")
+        # Get the date of the appointment from its time slot
+        time_slot = time_slots_collection.find_one({"_id": ObjectId(appointment["time_slot_id"])})
+        appointment_date = time_slot["start_time"].date()
+        
+        # Determine the next token number for that day
+        start_of_day = datetime.combine(appointment_date, time.min)
+        end_of_day = datetime.combine(appointment_date, time.max)
+        
+        # Find appointments on the same day that are already booked to assign the next token
+        booked_appointments_today = appointments_collection.count_documents({
+            "status": "booked",
+            "time_slot_id": {
+                "$in": [str(slot["_id"]) for slot in time_slots_collection.find({
+                    "start_time": {"$gte": start_of_day, "$lt": end_of_day}
+                })]
+            }
+        })
+        updated_fields["token_number"] = booked_appointments_today + 1
 
-    appointments_collection.update_one({"_id": appt_obj_id}, {"$set": update_data})
+    elif action == "reject":
+        updated_fields["status"] = "rejected"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action. Must be 'approve' or 'reject'.")
+
+    appointments_collection.update_one({"_id": appointment_oid}, {"$set": updated_fields})
     
-    updated_appointment = appointments_collection.find_one({"_id": appt_obj_id})
-    if updated_appointment:
-        updated_appointment["id"] = str(updated_appointment.pop("_id"))
-        return AppointmentResponse(**updated_appointment)
-    raise HTTPException(status_code=404, detail="Appointment not found after update")
+    # --- Create Notification ---
+    time_slot = time_slots_collection.find_one({"_id": ObjectId(appointment["time_slot_id"])})
+    if time_slot:
+        appointment_time = time_slot['start_time'].strftime('%I:%M %p on %b %d, %Y')
+        if action == "approve":
+            message = f"Your appointment for {appointment_time} has been approved. Your token is #{updated_fields['token_number']}."
+        else: # reject
+            message = f"Your appointment request for {appointment_time} has been rejected."
+        
+        notification_doc = {
+            "user_id": appointment["user_id"],
+            "message": message,
+            "is_read": False,
+            "created_at": datetime.utcnow(),
+            "link": "/my-appointments" 
+        }
+        notifications_collection.insert_one(notification_doc)
+    # -------------------------
+
+    updated_appointment = appointments_collection.find_one({"_id": appointment_oid})
+    if not updated_appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found after update")
+        
+    updated_appointment["id"] = str(updated_appointment.pop("_id"))
+    return AppointmentResponse(**updated_appointment)
 
 # =================================================================
 # Queue Management Routes (For Principal/Admin)
@@ -353,58 +598,116 @@ async def review_appointment(appointment_id: str, review_data: AppointmentReview
 @app.get("/queue/today", response_model=List[AppointmentResponse])
 async def get_todays_queue(current_user: dict = Depends(get_current_active_user)):
     if current_user["role"] not in ["principal", "admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized to view the queue")
-
-    today_start = datetime.combine(datetime.today().date(), datetime.min.time())
-    today_end = datetime.combine(datetime.today().date(), datetime.max.time())
-
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    today = date.today()
+    start_of_day = datetime.combine(today, time.min)
+    end_of_day = datetime.combine(today, time.max)
+    
+    # Find all time slots for today
+    todays_slots_cursor = time_slots_collection.find({"start_time": {"$gte": start_of_day, "$lt": end_of_day}})
+    todays_slot_ids = [str(slot["_id"]) for slot in todays_slots_cursor]
+    
+    # Find all appointments in those time slots that are approved ('booked') or currently active
     queue_cursor = appointments_collection.find({
-        "booked_at": {"$gte": today_start, "$lt": today_end},
+        "time_slot_id": {"$in": todays_slot_ids},
         "status": {"$in": ["booked", "active"]}
-    })
-
+    }).sort("token_number", 1) # Sort by token number
+    
     queue = []
-    for appt in queue_cursor:
-        appt["id"] = str(appt.pop("_id"))
-        user = users_collection.find_one({"_id": ObjectId(appt["user_id"])})
+    for app in queue_cursor:
+        app["id"] = str(app.pop("_id"))
+        
+        user = users_collection.find_one({"_id": ObjectId(app["user_id"])})
         if user:
-            user["id"] = str(user.pop("_id"))
-            appt["user_details"] = UserResponse(**user)
-        time_slot = time_slots_collection.find_one({"_id": ObjectId(appt["time_slot_id"])})
+            app["user_details"] = UserResponse(
+                id=str(user["_id"]), email=user["email"], name=user["name"], 
+                role=user["role"], phone=user.get("phone"), is_active=user.get("is_active", True),
+                created_at=user["created_at"]
+            )
+        
+        time_slot = time_slots_collection.find_one({"_id": ObjectId(app["time_slot_id"])})
         if time_slot:
             time_slot["id"] = str(time_slot.pop("_id"))
-            time_slot["booked_count"] = appointments_collection.count_documents({"time_slot_id": time_slot["id"], "status": "booked"})
-            appt["time_slot_details"] = TimeSlotResponse(**time_slot)
-        queue.append(AppointmentResponse(**appt))
-    
-    # Sort queue by time slot start time (chronological order)
-    queue.sort(key=lambda x: x.time_slot_details.start_time if x.time_slot_details else datetime.max)
+            time_slot["booked_count"] = 1 # Not relevant here, but model requires it
+            app["time_slot_details"] = TimeSlotResponse(**time_slot)
+            
+        queue.append(AppointmentResponse(**app))
         
     return queue
 
 @app.put("/appointments/{appointment_id}/status", response_model=AppointmentResponse)
 async def update_appointment_status(appointment_id: str, status: str = Query(..., enum=["active", "completed", "cancelled"]), current_user: dict = Depends(get_current_active_user)):
-    if current_user["role"] not in ["principal", "admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized to update appointments")
-
     appt_obj_id = ObjectId(appointment_id)
     appointment = appointments_collection.find_one({"_id": appt_obj_id})
 
     if not appointment:
         raise HTTPException(status_code=404, detail="Appointment not found")
 
+    if current_user["role"] not in ["principal", "admin"]:
+        if appointment['user_id'] != str(current_user['_id']) or status != 'cancelled':
+             raise HTTPException(status_code=403, detail="Not authorized to perform this action")
+
     appointments_collection.update_one({"_id": appt_obj_id}, {"$set": {"status": status}})
     
-    # If cancelled, make the time slot available again
-    if status == "cancelled":
+    # If a 'booked' appointment is 'cancelled' by a user, notify the principal
+    if status == "cancelled" and appointment.get("status") == "booked":
+        # Also make the time slot available again
         time_slot_id = ObjectId(appointment["time_slot_id"])
         time_slots_collection.update_one({"_id": time_slot_id}, {"$set": {"is_available": True}})
+
+        # Find the user who cancelled
+        cancelling_user = users_collection.find_one({"_id": ObjectId(appointment["user_id"])})
+        cancelling_user_name = cancelling_user["name"] if cancelling_user else "A user"
+
+        # Find the time slot to include in the message
+        time_slot = time_slots_collection.find_one({"_id": ObjectId(appointment["time_slot_id"])})
+        appointment_time = ""
+        if time_slot:
+            appointment_time = time_slot['start_time'].strftime('%I:%M %p on %b %d, %Y')
+        
+        # Find all principals
+        principals = users_collection.find({"role": "principal"})
+        for principal in principals:
+            notification_doc = {
+                "user_id": str(principal["_id"]),
+                "message": f"{cancelling_user_name} has cancelled their appointment for {appointment_time}.",
+                "is_read": False,
+                "created_at": datetime.utcnow(),
+                "link": "/queue" # Or wherever the principal views their schedule
+            }
+            notifications_collection.insert_one(notification_doc)
 
     updated_appointment = appointments_collection.find_one({"_id": appt_obj_id})
     if updated_appointment:
         updated_appointment["id"] = str(updated_appointment.pop("_id"))
         return AppointmentResponse(**updated_appointment)
     raise HTTPException(status_code=404, detail="Appointment not found after update")
+
+# =================================================================
+# Notification Routes
+# =================================================================
+
+@app.get("/notifications", response_model=List[NotificationResponse])
+async def get_notifications(current_user: dict = Depends(get_current_active_user)):
+    user_id = str(current_user["_id"])
+    notifications_cursor = notifications_collection.find({"user_id": user_id}).sort("created_at", -1)
+    
+    notifications = []
+    for notif in notifications_cursor:
+        notif["id"] = str(notif.pop("_id"))
+        notifications.append(NotificationResponse(**notif))
+        
+    return notifications
+
+@app.put("/notifications/read-all", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_all_notifications_as_read(current_user: dict = Depends(get_current_active_user)):
+    user_id = str(current_user["_id"])
+    notifications_collection.update_many(
+        {"user_id": user_id, "is_read": False},
+        {"$set": {"is_read": True}}
+    )
+    return
 
 if __name__ == "__main__":
     import uvicorn

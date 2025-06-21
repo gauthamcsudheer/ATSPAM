@@ -5,6 +5,10 @@ import MyAppointments from './MyAppointments';
 import QueueManagement from './QueueManagement';
 import ScheduleManagement from './ScheduleManagement';
 import PendingAppointments from './PendingAppointments';
+import UserManagement from './UserManagement';
+import ProfileManagement from './ProfileManagement';
+import SystemOverview from './SystemOverview';
+import Notifications from './Notifications';
 
 const Dashboard = ({ user, onLogout }) => {
   const [userInfo, setUserInfo] = useState(user);
@@ -14,7 +18,12 @@ const Dashboard = ({ user, onLogout }) => {
   const [showQueueManagement, setShowQueueManagement] = useState(false);
   const [showScheduleManagement, setShowScheduleManagement] = useState(false);
   const [showPendingAppointments, setShowPendingAppointments] = useState(false);
+  const [showUserManagement, setShowUserManagement] = useState(false);
+  const [showProfileManagement, setShowProfileManagement] = useState(false);
+  const [showSystemOverview, setShowSystemOverview] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const token = localStorage.getItem('token');
 
   const isPrincipalOrAdmin = user.role === 'principal' || user.role === 'admin';
@@ -47,6 +56,24 @@ const Dashboard = ({ user, onLogout }) => {
     fetchUserInfo();
   }, []);
 
+  // Fetch notifications
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const response = await axios.get('http://localhost:8000/notifications', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setNotifications(response.data);
+      } catch (error) {
+        console.error('Failed to fetch notifications', error);
+      }
+    };
+
+    fetchNotifications();
+    const intervalId = setInterval(fetchNotifications, 15000); // Poll every 15 seconds
+    return () => clearInterval(intervalId);
+  }, [token]);
+
   useEffect(() => {
     if (isPrincipalOrAdmin) {
       const fetchPendingCount = async () => {
@@ -71,6 +98,18 @@ const Dashboard = ({ user, onLogout }) => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     onLogout();
+  };
+
+  const handleClearNotifications = async () => {
+    try {
+      await axios.put('http://localhost:8000/notifications/read-all', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Optimistically update UI
+      setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+    } catch (error) {
+      console.error('Failed to mark notifications as read', error);
+    }
   };
 
   const getRoleDisplayName = (role) => {
@@ -104,14 +143,37 @@ const Dashboard = ({ user, onLogout }) => {
           <h1>Welcome to ATSPAM</h1>
           <p>Automated Token System for Principal's Appointment Management</p>
         </div>
-        <button onClick={handleLogout} className="logout-button">
-          Sign Out
-        </button>
+        <div className="header-actions">
+          <div className="notifications-container">
+            <button onClick={() => setShowNotifications(!showNotifications)} className="notification-button">
+              <span role="img" aria-label="Notifications">🔔</span>
+              {notifications.filter(n => !n.is_read).length > 0 && (
+                <span className="notification-badge-bell">
+                  {notifications.filter(n => !n.is_read).length}
+                </span>
+              )}
+            </button>
+            {showNotifications && (
+              <Notifications 
+                notifications={notifications} 
+                onClearAll={handleClearNotifications} 
+              />
+            )}
+          </div>
+          <button onClick={handleLogout} className="logout-button">
+            Sign Out
+          </button>
+        </div>
       </div>
 
       <div className="dashboard-content">
         <div className="user-info-card">
-          <h2>Your Profile</h2>
+          <div className="card-header">
+            <h2>Your Profile</h2>
+            <button onClick={() => setShowProfileManagement(true)} className="manage-profile-button">
+              Edit Profile
+            </button>
+          </div>
           <div className="user-details">
             <div className="detail-item">
               <strong>Name:</strong>
@@ -182,10 +244,16 @@ const Dashboard = ({ user, onLogout }) => {
               </>
             ) : (
               <>
-                <button className="action-button primary">
+                <button 
+                  className="action-button primary"
+                  onClick={() => setShowSystemOverview(true)}
+                >
                   📊 System Overview
                 </button>
-                <button className="action-button secondary">
+                <button 
+                  className="action-button secondary"
+                  onClick={() => setShowUserManagement(true)}
+                >
                   👥 User Management
                 </button>
                 <button className="action-button secondary">
@@ -237,6 +305,21 @@ const Dashboard = ({ user, onLogout }) => {
       )}
 
       {showPendingAppointments && <PendingAppointments onClose={() => setShowPendingAppointments(false)} />}
+
+      {showUserManagement && <UserManagement onClose={() => setShowUserManagement(false)} />}
+
+      {showProfileManagement && 
+        <ProfileManagement 
+          user={userInfo} 
+          onClose={() => setShowProfileManagement(false)}
+          onUpdateSuccess={(updatedUser) => {
+            setUserInfo(updatedUser);
+            setShowProfileManagement(false);
+          }}
+        />
+      }
+
+      {showSystemOverview && <SystemOverview onClose={() => setShowSystemOverview(false)} />}
     </div>
   );
 };

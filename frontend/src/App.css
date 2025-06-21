@@ -256,16 +256,14 @@ body {
 }
 
 .dashboard-header {
-  background: white;
-  padding: 32px 40px;
-  margin-bottom: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  border-bottom: 4px solid #812d2b;
+  width: 100%;
+  max-width: 1200px;
+  padding: 24px 32px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .dashboard-header h1 {
@@ -283,9 +281,9 @@ body {
 }
 
 .logout-button {
-  background: #812d2b;
-  color: white;
-  border: none;
+  background: #f8f9fa;
+  border: 1px solid #d1d5db;
+  color: #333;
   padding: 12px 24px;
   border-radius: 8px;
   font-size: 14px;
@@ -295,7 +293,7 @@ body {
 }
 
 .logout-button:hover {
-  background: #6b2523;
+  background: #e9ecef;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(129, 45, 43, 0.3);
 }
@@ -387,8 +385,8 @@ body {
 }
 
 .status.inactive {
-  background: #fee2e2;
-  color: #991b1b;
+  background-color: #f1f5f9;
+  color: #64748b;
 }
 
 .action-buttons {
@@ -559,8 +557,37 @@ body {
 
 .header-actions {
   display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 20px;
+}
+
+.notifications-container {
+  position: relative;
+}
+
+.notification-button {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  position: relative;
+}
+
+.notification-badge-bell {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  background-color: #dc2626;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
 }
 
 .close-button {
@@ -821,23 +848,25 @@ body {
 }
 
 .status-cancelled {
-  background: #fee2e2;
-  color: #991b1b;
+  background-color: #f1f5f9;
+  color: #64748b;
 }
 
 .status-pending {
-  background: #fef3c7;
-  color: #92400e;
+  background-color: #fefce8;
+  color: #a16207;
 }
 
 .status-rejected {
-  background: #fca5a5;
-  color: #7f1d1d;
+  background-color: #f8fafc;
+  color: #475569;
+  text-decoration: line-through;
 }
 
 .booked-count {
+  font-size: 13px;
+  font-weight: 500;
   display: block;
-  font-size: 12px;
   margin-top: 4px;
   color: #667085;
 }
@@ -886,16 +915,25 @@ body {
 }
 
 .detail-row span {
-  color: #666;
+  color: #4b5563;
+  word-break: break-word;
   font-size: 14px;
   text-align: right;
   flex: 1;
   margin-left: 16px;
 }
 
+.appointment-actions {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 16px;
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .queue-actions {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   margin-top: 16px;
   flex-wrap: wrap;
 }
@@ -935,7 +973,7 @@ body {
 }
 
 .action-button.cancel {
-  background: #dc2626;
+  background-color: #b91c1c;
   color: white;
   border: none;
   padding: 8px 16px;
@@ -947,11 +985,27 @@ body {
 }
 
 .action-button.cancel:hover:not(:disabled) {
-  background: #b91c1c;
-  transform: translateY(-1px);
+  background-color: #b91c1c;
+}
+
+.action-button.cancel-small {
+  background-color: transparent;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+  padding: 8px 16px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+.action-button.cancel-small:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+  color: #334155;
 }
 
 .action-button:disabled {
+  background-color: #e2e8f0;
+  color: #94a3b8;
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
@@ -977,15 +1031,151 @@ body {
 }
 
 .no-appointments p {
-  color: #666;
+  font-size: 15px;
+  color: #64748b;
+  max-width: 400px;
+}
+
+/* User Management Table Styles */
+.user-management-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.user-management-table th,
+.user-management-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+.user-management-table th {
+  background-color: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.user-management-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.role-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  cursor: pointer;
+  font-family: inherit;
   font-size: 14px;
-  line-height: 1.5;
+  color: #374151;
+}
+
+.role-select:focus {
+  outline: none;
+  border-color: #812d2b;
+  box-shadow: 0 0 0 3px rgba(129, 45, 43, 0.1);
+}
+
+/* Toggle Switch Styles */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.switch input { 
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #16a34a;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #16a34a;
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
+}
+
+/* Rounded sliders */
+.slider.round {
+  border-radius: 24px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+/* Admin Stats Overview */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 24px;
+}
+
+.stat-card {
+  background-color: #f9fafb;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #e5e7eb;
+  text-align: center;
+}
+
+.stat-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #4b5563;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 42px;
+  font-weight: 700;
+  color: #812d2b;
+  line-height: 1.2;
+}
+
+.stat-details {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 12px;
 }
 
 /* Responsive design */
 @media (max-width: 768px) {
   .auth-container {
-    padding: 0 16px;
+    padding: 0 10px;
   }
   
   .auth-card {
@@ -1086,4 +1276,123 @@ body {
     text-align: left;
     margin-left: 0;
   }
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.manage-profile-button {
+  background: transparent;
+  border: 1px solid #d1d5db;
+  color: #4b5563;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.manage-profile-button:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-form h3 {
+  font-size: 18px;
+  color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+}
+
+.form-divider {
+  height: 1px;
+  background-color: #e5e7eb;
+  margin: 32px 0;
+}
+
+/* Notifications Panel */
+.notifications-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 380px;
+  max-height: 400px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e5e7eb;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.notifications-panel.empty {
+  padding: 20px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.notifications-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.notifications-header h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.clear-all-button {
+  background: none;
+  border: none;
+  color: #812d2b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clear-all-button:hover {
+  text-decoration: underline;
+}
+
+.notifications-list {
+  overflow-y: auto;
+  flex-grow: 1;
+}
+
+.notification-item {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.notification-item:last-child {
+  border-bottom: none;
+}
+
+.notification-item p {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.5;
+  margin: 0 0 6px 0;
+}
+
+.notification-time {
+  font-size: 12px;
+  color: #9ca3af;
 }
